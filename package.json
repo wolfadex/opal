@@ -1,0 +1,11 @@
+{
+  "name": "opal",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "elm-cli run src/Cli.elm"
+  },
+  "author": "Wolfgang Schuster",
+  "devDependencies": {
+    "@albertdahlin/elm-posix": "^1.1.0"
+  }
+}
