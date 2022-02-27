@@ -9,7 +9,7 @@ parse : String -> Result String Module
 parse input =
     case Parser.run parseOpal input of
         Ok module_ ->
-            Ok { definitions = List.map simplifyDefinition module_.definitions }
+            Ok { definitions = module_.definitions }
 
         Err deadEnds ->
             let
@@ -47,11 +47,6 @@ type alias Definition =
     }
 
 
-simplifyDefinition : Definition -> Definition
-simplifyDefinition definition =
-    { definition | body = unpipe definition.body }
-
-
 parseDefinition : Parser Definition
 parseDefinition =
     Parser.succeed (\label body -> { label = label, body = body })
@@ -80,16 +75,6 @@ type Expression
     | ExprFunctionApplication String (List Expression)
     | ExprAnonymousFunction (List String) Expression
     | ExprWord String
-
-
-unpipe : Expression -> Expression
-unpipe expression =
-    case expression of
-        ExprBinary PipedFunction leftExpr (ExprFunctionApplication label argExprs) ->
-            ExprFunctionApplication label (unpipe leftExpr :: List.map unpipe argExprs)
-
-        _ ->
-            expression
 
 
 type BinaryOperator

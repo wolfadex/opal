@@ -1,4 +1,4 @@
-main = multiply(decrement(2 + 3), 2);
+main = (2 + 3).decrement().multiply(2);
 
 decrement = \n -> n - 1;
 

@@ -4,19 +4,20 @@ import Dict
 import Opal
     exposing
         ( BinaryOperator(..)
+        , Definition
         , Expression(..)
         , Literal(..)
         , Module
         , UnaryOperator(..)
         )
-import Result.Extra
 
 
 compile : Module -> Result String String
 compile module_ =
     let
         defs =
-            List.map (\def -> ( def.label, def.body )) module_.definitions
+            module_.definitions
+                |> List.map (simplifyDefinition >> (\def -> ( def.label, def.body )))
                 |> Dict.fromList
     in
     case ( Dict.get "main" defs, Dict.toList (Dict.remove "main" defs) ) of
@@ -35,6 +36,36 @@ module.exports = {
 
         ( Nothing, _ ) ->
             Err "Missing a 'main' function"
+
+
+simplifyDefinition : Definition -> Definition
+simplifyDefinition definition =
+    { definition | body = unpipe definition.body }
+
+
+unpipe : Expression -> Expression
+unpipe expression =
+    case expression of
+        ExprBinary PipedFunction leftExpr (ExprFunctionApplication label argExprs) ->
+            ExprFunctionApplication label (unpipe leftExpr :: List.map unpipe argExprs)
+
+        ExprBinary op leftExpr rightExpr ->
+            ExprBinary op (unpipe leftExpr) (unpipe rightExpr)
+
+        ExprLiteral _ ->
+            expression
+
+        ExprUnary unary expr ->
+            ExprUnary unary (unpipe expr)
+
+        ExprFunctionApplication label argExprs ->
+            ExprFunctionApplication label (List.map unpipe argExprs)
+
+        ExprAnonymousFunction args expr ->
+            ExprAnonymousFunction args (unpipe expr)
+
+        ExprWord _ ->
+            expression
 
 
 compileDefinition : ( String, Expression ) -> String
