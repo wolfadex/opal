@@ -82,6 +82,7 @@ praseTypeDef =
             |. Parser.symbol ":"
             |. Parser.spaces
             |= parseType
+            |> Parser.backtrackable
         , Parser.succeed Nothing
         ]
 
