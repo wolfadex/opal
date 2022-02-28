@@ -82,6 +82,7 @@ type Expression
     | ExprAnonymousFunction (List String) Expression
     | ExprWord String
     | ExprLetIn (List Definition) Expression
+    | ExprIfElse Expression Expression Expression
 
 
 simplify : Expression -> Expression
@@ -116,6 +117,9 @@ recurseExpression fn expression =
                     \def -> { def | body = fn def.body }
             in
             ExprLetIn (List.map recurseDef defs) (fn expr)
+
+        ExprIfElse conditionExpr thenExpr elseExpr ->
+            ExprIfElse (fn conditionExpr) (fn thenExpr) (fn elseExpr)
 
 
 simplifyAll : Expression -> Maybe Expression
@@ -159,6 +163,7 @@ parseExpression =
             [ Pratt.literal (Parser.map ExprLiteral parseLiteral)
             , Pratt.prefix 5 (Parser.symbol "-") (ExprUnary Negate)
             , parseLetIn
+            , parseIfElse
             , parseFunction
             , parenthesizedExpression
             , Pratt.literal (Parser.map ExprWord parseLabel)
@@ -186,6 +191,23 @@ parseLetIn config =
         |. Parser.keyword "in"
         |. Parser.spaces
         |= Pratt.subExpression 0 config
+
+
+parseIfElse : Pratt.Config Expression -> Parser Expression
+parseIfElse config =
+    Parser.succeed ExprIfElse
+        |. Parser.keyword "if"
+        |. Parser.spaces
+        |= Pratt.subExpression 0 config
+        |. Parser.spaces
+        |. Parser.keyword "then"
+        |. Parser.spaces
+        |= Pratt.subExpression 0 config
+        |. Parser.spaces
+        |. Parser.keyword "else"
+        |. Parser.spaces
+        |= Pratt.subExpression 0 config
+        |. Parser.spaces
 
 
 parseFunction : Pratt.Config Expression -> Parser Expression

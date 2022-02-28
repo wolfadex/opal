@@ -27,6 +27,14 @@ compile module_ =
                 ++ compileDefinition ( "main", mainBody )
                 ++ """
 
+function __core__ifElse(_condition, _then, _else) {
+  if (_condition) {
+    return _then;
+  } else {
+    return _else;
+  }
+}
+
 module.exports = {
   init: function (...args) {
     return typeof main === "function" ? main(...args) : main;
@@ -98,3 +106,6 @@ compileExpression expression =
                 ++ "\n  return "
                 ++ compileExpression expr
                 ++ "\n})()"
+
+        ExprIfElse conditionExpr thenExpr elseExpr ->
+            "__core__ifElse(" ++ compileExpression conditionExpr ++ ", " ++ compileExpression thenExpr ++ ", " ++ compileExpression elseExpr ++ ")"
