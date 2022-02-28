@@ -12,37 +12,26 @@ program process =
     case process.argv of
         _ :: filename :: maybeFilename ->
             File.contentsOf filename
+                |> IO.exitOnError identity
+                |> IO.map Opal.parse
+                |> IO.exitOnError identity
+                |> IO.map Opal.typeCheck
+                |> IO.exitOnError identity
+                |> IO.map Opal.Js.compile
+                |> IO.exitOnError identity
                 |> IO.andThen
-                    (\result ->
-                        case result of
-                            Err err ->
-                                Process.logErr ("Failed to read file: " ++ err)
-                                    |> IO.andThen (\() -> Process.exit 1)
+                    (\compiledJs ->
+                        let
+                            outputFilename =
+                                case maybeFilename of
+                                    [] ->
+                                        "opal.js"
 
-                            Ok content ->
-                                case Opal.parse content of
-                                    Err err ->
-                                        Process.logErr err
-                                            |> IO.andThen (\() -> Process.exit 1)
-
-                                    Ok code ->
-                                        case Opal.Js.compile code of
-                                            Ok compiledJs ->
-                                                let
-                                                    outputFilename =
-                                                        case maybeFilename of
-                                                            [] ->
-                                                                "opal.js"
-
-                                                            name :: _ ->
-                                                                name
-                                                in
-                                                File.writeContentsTo outputFilename compiledJs
-                                                    |> IO.andThen (\() -> Process.print ("Compiled to " ++ outputFilename ++ "\n"))
-
-                                            Err compileErr ->
-                                                Process.logErr compileErr
-                                                    |> IO.andThen (\() -> Process.exit 1)
+                                    name :: _ ->
+                                        name
+                        in
+                        File.writeContentsTo outputFilename compiledJs
+                            |> IO.andThen (\() -> Process.print ("Compiled to " ++ outputFilename ++ "\n"))
                     )
 
         _ ->

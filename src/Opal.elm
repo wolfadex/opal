@@ -48,15 +48,23 @@ parseDefinitionsHelper reverseDefinitions =
 
 type alias Definition =
     { label : String
+    , type_ : Maybe Type
     , body : Expression
     }
 
 
+type Type
+    = TConcrete String
+    | TVariable String
+    | TFunction (List Type) Type
+
+
 parseDefinition : Parser Definition
 parseDefinition =
-    Parser.succeed (\label body -> { label = label, body = body })
+    Parser.succeed (\label type_ body -> { label = label, type_ = type_, body = body })
         |. Parser.spaces
         |= parseLabel
+        |= praseTypeDef
         |. Parser.spaces
         |. Parser.symbol "="
         |. Parser.spaces
@@ -64,6 +72,68 @@ parseDefinition =
         |. Parser.spaces
         |. Parser.symbol ";"
         |> Parser.backtrackable
+
+
+praseTypeDef : Parser (Maybe Type)
+praseTypeDef =
+    Parser.oneOf
+        [ Parser.succeed (Debug.log "type def" >> Just)
+            |. Parser.spaces
+            |. Parser.symbol ":"
+            |. Parser.spaces
+            |= parseType
+        , Parser.succeed Nothing
+        ]
+
+
+parseType : Parser Type
+parseType =
+    Pratt.expression
+        { oneOf =
+            [ Pratt.literal parseConcreteType
+            , Pratt.literal parseTypeVariable
+            , parseFunctionType
+            ]
+        , andThenOneOf = []
+        , spaces = Parser.spaces
+        }
+
+
+parseConcreteType : Parser Type
+parseConcreteType =
+    Parser.succeed ()
+        |. Parser.chompIf (\char -> Char.isAlpha char && Char.isUpper char)
+        |. Parser.chompWhile Char.isAlphaNum
+        |> Parser.getChompedString
+        |> Parser.map TConcrete
+        |> Parser.backtrackable
+
+
+parseTypeVariable : Parser Type
+parseTypeVariable =
+    Parser.succeed ()
+        |. Parser.chompIf (\char -> Char.isAlpha char && Char.isLower char)
+        |. Parser.chompWhile Char.isAlphaNum
+        |> Parser.getChompedString
+        |> Parser.map TVariable
+        |> Parser.backtrackable
+
+
+parseFunctionType : Pratt.Config Type -> Parser Type
+parseFunctionType config =
+    Parser.succeed TFunction
+        |= Parser.sequence
+            { start = "("
+            , separator = ","
+            , spaces = Parser.spaces
+            , item = Pratt.subExpression 0 config
+            , end = ")"
+            , trailing = Forbidden
+            }
+        |. Parser.spaces
+        |. Parser.symbol "->"
+        |. Parser.spaces
+        |= Pratt.subExpression 0 config
 
 
 parseLabel : Parser String
@@ -298,6 +368,15 @@ parseStringHelper result =
             |> Parser.map (\charStr -> Loop (result ++ charStr))
         , Parser.succeed (Done result)
         ]
+
+
+
+---- TYPE CHECKER ----
+
+
+typeCheck : Module -> Result String Module
+typeCheck module_ =
+    Ok module_
 
 
 
