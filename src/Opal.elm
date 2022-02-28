@@ -27,13 +27,18 @@ type alias Module =
 parseOpal : Parser Module
 parseOpal =
     Parser.succeed (\definitions -> { definitions = definitions })
-        |= Parser.loop [] parseDefinitions
+        |= parseDefinitions
         |. Parser.spaces
         |. Parser.end
 
 
-parseDefinitions : List Definition -> Parser (Step (List Definition) (List Definition))
-parseDefinitions reverseDefinitions =
+parseDefinitions : Parser (List Definition)
+parseDefinitions =
+    Parser.loop [] parseDefinitionsHelper
+
+
+parseDefinitionsHelper : List Definition -> Parser (Step (List Definition) (List Definition))
+parseDefinitionsHelper reverseDefinitions =
     Parser.oneOf
         [ Parser.succeed (\definition -> Loop (definition :: reverseDefinitions))
             |= parseDefinition
@@ -58,6 +63,7 @@ parseDefinition =
         |= parseExpression
         |. Parser.spaces
         |. Parser.symbol ";"
+        |> Parser.backtrackable
 
 
 parseLabel : Parser String
@@ -75,6 +81,7 @@ type Expression
     | ExprFunctionApplication String (List Expression)
     | ExprAnonymousFunction (List String) Expression
     | ExprWord String
+    | ExprLetIn (List Definition) Expression
 
 
 simplify : Expression -> Expression
@@ -102,6 +109,13 @@ recurseExpression fn expression =
 
         ExprWord _ ->
             expression
+
+        ExprLetIn defs expr ->
+            let
+                recurseDef =
+                    \def -> { def | body = fn def.body }
+            in
+            ExprLetIn (List.map recurseDef defs) (fn expr)
 
 
 simplifyAll : Expression -> Maybe Expression
@@ -144,6 +158,7 @@ parseExpression =
         { oneOf =
             [ Pratt.literal (Parser.map ExprLiteral parseLiteral)
             , Pratt.prefix 5 (Parser.symbol "-") (ExprUnary Negate)
+            , parseLetIn
             , parseFunction
             , parenthesizedExpression
             , Pratt.literal (Parser.map ExprWord parseLabel)
@@ -159,6 +174,18 @@ parseExpression =
             ]
         , spaces = Parser.spaces
         }
+
+
+parseLetIn : Pratt.Config Expression -> Parser Expression
+parseLetIn config =
+    Parser.succeed ExprLetIn
+        |. Parser.keyword "let"
+        |. Parser.spaces
+        |= parseDefinitions
+        |. Parser.spaces
+        |. Parser.keyword "in"
+        |. Parser.spaces
+        |= Pratt.subExpression 0 config
 
 
 parseFunction : Pratt.Config Expression -> Parser Expression

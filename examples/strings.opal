@@ -1,5 +1,5 @@
-main = "Carl".hello().exclaim();
-
-hello = \name -> "Hello, " ++ name;
-
-exclaim = \s -> s ++ "!";
+main =
+    let exclaim = \s -> s ++ "!";
+        hello = \name -> "Hello, " ++ name;
+    in
+    "Carl" . hello() . exclaim();

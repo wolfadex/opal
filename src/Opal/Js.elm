@@ -50,7 +50,7 @@ compileDefinition ( label, body ) =
             "function " ++ label ++ "(" ++ String.join ", " args ++ ") { return " ++ compileExpression expr ++ "; }"
 
         _ ->
-            "var " ++ label ++ " = " ++ compileExpression body
+            "var " ++ label ++ " = " ++ compileExpression body ++ ";"
 
 
 compileExpression : Opal.Expression -> String
@@ -91,3 +91,10 @@ compileExpression expression =
 
         ExprWord label ->
             label
+
+        ExprLetIn defs expr ->
+            "(function() {"
+                ++ String.join "\n" (List.map (\def -> compileDefinition ( def.label, def.body )) defs)
+                ++ "\n  return "
+                ++ compileExpression expr
+                ++ "\n})()"
