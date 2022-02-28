@@ -65,7 +65,7 @@ compileExpression : Opal.Expression -> String
 compileExpression expression =
     case expression of
         ExprLiteral (LitInt i) ->
-            String.fromInt i
+            String.fromInt i ++ "n"
 
         ExprLiteral (LitString str) ->
             "'" ++ str ++ "'"
@@ -80,7 +80,7 @@ compileExpression expression =
             compileExpression leftExpr ++ " * " ++ compileExpression rightExpr
 
         ExprBinary Quotient leftExpr rightExpr ->
-            "Math.floor(" ++ compileExpression leftExpr ++ " / " ++ compileExpression rightExpr ++ ")"
+            compileExpression leftExpr ++ " / " ++ compileExpression rightExpr
 
         ExprBinary PipedFunction _ _ ->
             "new Error('Piped functions should be reduced out')"
