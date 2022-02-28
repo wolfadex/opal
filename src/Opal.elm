@@ -1,8 +1,8 @@
 module Opal exposing (..)
 
-import Dict exposing (Dict)
 import Parser exposing ((|.), (|=), DeadEnd, Parser, Problem(..), Step(..), Trailing(..))
 import Pratt
+import Transform
 
 
 parse : String -> Result String Module
@@ -77,12 +77,61 @@ type Expression
     | ExprWord String
 
 
-type BinaryOperator
+simplify : Expression -> Expression
+simplify =
+    Transform.transformAll recurseExpression simplifyAll
+
+
+recurseExpression : (Expression -> Expression) -> Expression -> Expression
+recurseExpression fn expression =
+    case expression of
+        ExprBinary op leftExpr rightExpr ->
+            ExprBinary op (fn leftExpr) (fn rightExpr)
+
+        ExprLiteral _ ->
+            expression
+
+        ExprUnary unary expr ->
+            ExprUnary unary (fn expr)
+
+        ExprFunctionApplication label argExprs ->
+            ExprFunctionApplication label (List.map fn argExprs)
+
+        ExprAnonymousFunction args expr ->
+            ExprAnonymousFunction args (fn expr)
+
+        ExprWord _ ->
+            expression
+
+
+simplifyAll : Expression -> Maybe Expression
+simplifyAll =
+    Transform.orList_
+        [ simplifyPipe
+        ]
+
+
+simplifyPipe : Expression -> Expression
+simplifyPipe expression =
+    case expression of
+        ExprBinary PipedFunction leftExpr (ExprFunctionApplication label argExprs) ->
+            ExprFunctionApplication label (leftExpr :: argExprs)
+
+        _ ->
+            expression
+
+
+type
+    BinaryOperator
+    -- Math
     = Sum
     | Difference
     | Product
     | Quotient
+      -- Helper
     | PipedFunction
+      -- Joinable
+    | Concat
 
 
 type UnaryOperator
@@ -101,7 +150,8 @@ parseExpression =
             , parseLambda
             ]
         , andThenOneOf =
-            [ Pratt.infixLeft 1 (Parser.symbol "+") (ExprBinary Sum)
+            [ Pratt.infixLeft 1 (Parser.symbol "++") (ExprBinary Concat)
+            , Pratt.infixLeft 1 (Parser.symbol "+") (ExprBinary Sum)
             , Pratt.infixLeft 1 (Parser.symbol "-") (ExprBinary Difference)
             , Pratt.infixLeft 10 (Parser.symbol "*") (ExprBinary Product)
             , Pratt.infixLeft 10 (Parser.symbol "/") (ExprBinary Quotient)
@@ -152,12 +202,14 @@ parseLambda config =
 
 type Literal
     = LitInt Int
+    | LitString String
 
 
 parseLiteral : Parser Literal
 parseLiteral =
     Parser.oneOf
         [ Parser.map LitInt parseInt
+        , Parser.map LitString parseString
         ]
 
 
@@ -176,6 +228,27 @@ parseInt =
                     Nothing ->
                         Parser.problem ("Expected an Int but found " ++ digitsStr)
             )
+
+
+parseString : Parser String
+parseString =
+    Parser.succeed identity
+        |. Parser.symbol "\""
+        |= Parser.loop "" parseStringHelper
+        |. Parser.symbol "\""
+
+
+parseStringHelper : String -> Parser (Step String String)
+parseStringHelper result =
+    Parser.oneOf
+        [ Parser.succeed (Loop (result ++ "\""))
+            |. Parser.symbol "\\\""
+        , Parser.succeed ()
+            |. Parser.chompIf (\char -> char /= '"')
+            |> Parser.getChompedString
+            |> Parser.map (\charStr -> Loop (result ++ charStr))
+        , Parser.succeed (Done result)
+        ]
 
 
 

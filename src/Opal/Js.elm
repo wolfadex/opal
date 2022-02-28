@@ -40,32 +40,7 @@ module.exports = {
 
 simplifyDefinition : Definition -> Definition
 simplifyDefinition definition =
-    { definition | body = unpipe definition.body }
-
-
-unpipe : Expression -> Expression
-unpipe expression =
-    case expression of
-        ExprBinary PipedFunction leftExpr (ExprFunctionApplication label argExprs) ->
-            ExprFunctionApplication label (unpipe leftExpr :: List.map unpipe argExprs)
-
-        ExprBinary op leftExpr rightExpr ->
-            ExprBinary op (unpipe leftExpr) (unpipe rightExpr)
-
-        ExprLiteral _ ->
-            expression
-
-        ExprUnary unary expr ->
-            ExprUnary unary (unpipe expr)
-
-        ExprFunctionApplication label argExprs ->
-            ExprFunctionApplication label (List.map unpipe argExprs)
-
-        ExprAnonymousFunction args expr ->
-            ExprAnonymousFunction args (unpipe expr)
-
-        ExprWord _ ->
-            expression
+    { definition | body = Opal.simplify definition.body }
 
 
 compileDefinition : ( String, Expression ) -> String
@@ -84,6 +59,9 @@ compileExpression expression =
         ExprLiteral (LitInt i) ->
             String.fromInt i
 
+        ExprLiteral (LitString str) ->
+            "'" ++ str ++ "'"
+
         ExprBinary Sum leftExpr rightExpr ->
             compileExpression leftExpr ++ " + " ++ compileExpression rightExpr
 
@@ -98,6 +76,9 @@ compileExpression expression =
 
         ExprBinary PipedFunction _ _ ->
             "new Error('Piped functions should be reduced out')"
+
+        ExprBinary Concat leftExpr rightExpr ->
+            compileExpression leftExpr ++ " + " ++ compileExpression rightExpr
 
         ExprUnary Negate expr ->
             "-" ++ compileExpression expr

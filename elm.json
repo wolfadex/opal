@@ -6,6 +6,7 @@
     "elm-version": "0.19.1",
     "dependencies": {
         "direct": {
+            "Janiczek/transform": "1.1.0",
             "albertdahlin/elm-posix": "1.1.0",
             "dmy/elm-pratt-parser": "2.0.0",
             "elm/browser": "1.0.2",
