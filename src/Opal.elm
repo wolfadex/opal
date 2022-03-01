@@ -1,7 +1,16 @@
 module Opal exposing (..)
 
+import Opal.Ast.Canonical
+    exposing
+        ( BinaryOperator(..)
+        , Expression(..)
+        , Literal(..)
+        , UnaryOperator(..)
+        )
+import Opal.Ast.Typed
+import Opal.InferTypes.IdSource exposing (IdSource)
 import Parser exposing ((|.), (|=), DeadEnd, Parser, Problem(..), Step(..), Trailing(..))
-import Pratt
+import Pratt exposing (expression)
 import Transform
 
 
@@ -20,7 +29,7 @@ parse input =
 
 
 type alias Module =
-    { definitions : List Definition
+    { definitions : List Opal.Ast.Canonical.Definition
     }
 
 
@@ -32,12 +41,12 @@ parseOpal =
         |. Parser.end
 
 
-parseDefinitions : Parser (List Definition)
+parseDefinitions : Parser (List Opal.Ast.Canonical.Definition)
 parseDefinitions =
     Parser.loop [] parseDefinitionsHelper
 
 
-parseDefinitionsHelper : List Definition -> Parser (Step (List Definition) (List Definition))
+parseDefinitionsHelper : List Opal.Ast.Canonical.Definition -> Parser (Step (List Opal.Ast.Canonical.Definition) (List Opal.Ast.Canonical.Definition))
 parseDefinitionsHelper reverseDefinitions =
     Parser.oneOf
         [ Parser.succeed (\definition -> Loop (definition :: reverseDefinitions))
@@ -46,20 +55,7 @@ parseDefinitionsHelper reverseDefinitions =
         ]
 
 
-type alias Definition =
-    { label : String
-    , type_ : Maybe Type
-    , body : Expression
-    }
-
-
-type Type
-    = TConcrete String
-    | TVariable String
-    | TFunction (List Type) Type
-
-
-parseDefinition : Parser Definition
+parseDefinition : Parser Opal.Ast.Canonical.Definition
 parseDefinition =
     Parser.succeed (\label type_ body -> { label = label, type_ = type_, body = body })
         |. Parser.spaces
@@ -74,7 +70,7 @@ parseDefinition =
         |> Parser.backtrackable
 
 
-praseTypeDef : Parser (Maybe Type)
+praseTypeDef : Parser (Maybe Opal.Ast.Canonical.Type)
 praseTypeDef =
     Parser.oneOf
         [ Parser.succeed (Debug.log "type def" >> Just)
@@ -87,7 +83,7 @@ praseTypeDef =
         ]
 
 
-parseType : Parser Type
+parseType : Parser Opal.Ast.Canonical.Type
 parseType =
     Pratt.expression
         { oneOf =
@@ -100,29 +96,29 @@ parseType =
         }
 
 
-parseConcreteType : Parser Type
+parseConcreteType : Parser Opal.Ast.Canonical.Type
 parseConcreteType =
     Parser.succeed ()
         |. Parser.chompIf (\char -> Char.isAlpha char && Char.isUpper char)
         |. Parser.chompWhile Char.isAlphaNum
         |> Parser.getChompedString
-        |> Parser.map TConcrete
+        |> Parser.map Opal.Ast.Canonical.Concrete
         |> Parser.backtrackable
 
 
-parseTypeVariable : Parser Type
+parseTypeVariable : Parser Opal.Ast.Canonical.Type
 parseTypeVariable =
     Parser.succeed ()
         |. Parser.chompIf (\char -> Char.isAlpha char && Char.isLower char)
         |. Parser.chompWhile Char.isAlphaNum
         |> Parser.getChompedString
-        |> Parser.map TVariable
+        |> Parser.map Opal.Ast.Canonical.Variable
         |> Parser.backtrackable
 
 
-parseFunctionType : Pratt.Config Type -> Parser Type
+parseFunctionType : Pratt.Config Opal.Ast.Canonical.Type -> Parser Opal.Ast.Canonical.Type
 parseFunctionType config =
-    Parser.succeed TFunction
+    Parser.succeed Opal.Ast.Canonical.Function
         |= Parser.sequence
             { start = "("
             , separator = ","
@@ -145,23 +141,12 @@ parseLabel =
         |> Parser.getChompedString
 
 
-type Expression
-    = ExprLiteral Literal
-    | ExprBinary BinaryOperator Expression Expression
-    | ExprUnary UnaryOperator Expression
-    | ExprFunctionApplication String (List Expression)
-    | ExprAnonymousFunction (List String) Expression
-    | ExprWord String
-    | ExprLetIn (List Definition) Expression
-    | ExprIfElse Expression Expression Expression
-
-
-simplify : Expression -> Expression
+simplify : Opal.Ast.Canonical.Expression -> Opal.Ast.Canonical.Expression
 simplify =
     Transform.transformAll recurseExpression simplifyAll
 
 
-recurseExpression : (Expression -> Expression) -> Expression -> Expression
+recurseExpression : (Opal.Ast.Canonical.Expression -> Opal.Ast.Canonical.Expression) -> Opal.Ast.Canonical.Expression -> Opal.Ast.Canonical.Expression
 recurseExpression fn expression =
     case expression of
         ExprBinary op leftExpr rightExpr ->
@@ -193,14 +178,14 @@ recurseExpression fn expression =
             ExprIfElse (fn conditionExpr) (fn thenExpr) (fn elseExpr)
 
 
-simplifyAll : Expression -> Maybe Expression
+simplifyAll : Opal.Ast.Canonical.Expression -> Maybe Opal.Ast.Canonical.Expression
 simplifyAll =
     Transform.orList_
         [ simplifyPipe
         ]
 
 
-simplifyPipe : Expression -> Expression
+simplifyPipe : Opal.Ast.Canonical.Expression -> Opal.Ast.Canonical.Expression
 simplifyPipe expression =
     case expression of
         ExprBinary PipedFunction leftExpr (ExprFunctionApplication label argExprs) ->
@@ -210,24 +195,7 @@ simplifyPipe expression =
             expression
 
 
-type
-    BinaryOperator
-    -- Math
-    = Sum
-    | Difference
-    | Product
-    | Quotient
-      -- Helper
-    | PipedFunction
-      -- Joinable
-    | Concat
-
-
-type UnaryOperator
-    = Negate
-
-
-parseExpression : Parser Expression
+parseExpression : Parser Opal.Ast.Canonical.Expression
 parseExpression =
     Pratt.expression
         { oneOf =
@@ -252,7 +220,7 @@ parseExpression =
         }
 
 
-parseLetIn : Pratt.Config Expression -> Parser Expression
+parseLetIn : Pratt.Config Opal.Ast.Canonical.Expression -> Parser Opal.Ast.Canonical.Expression
 parseLetIn config =
     Parser.succeed ExprLetIn
         |. Parser.keyword "let"
@@ -264,7 +232,7 @@ parseLetIn config =
         |= Pratt.subExpression 0 config
 
 
-parseIfElse : Pratt.Config Expression -> Parser Expression
+parseIfElse : Pratt.Config Opal.Ast.Canonical.Expression -> Parser Opal.Ast.Canonical.Expression
 parseIfElse config =
     Parser.succeed ExprIfElse
         |. Parser.keyword "if"
@@ -281,7 +249,7 @@ parseIfElse config =
         |. Parser.spaces
 
 
-parseFunction : Pratt.Config Expression -> Parser Expression
+parseFunction : Pratt.Config Opal.Ast.Canonical.Expression -> Parser Opal.Ast.Canonical.Expression
 parseFunction config =
     Parser.succeed ExprFunctionApplication
         |= parseLabel
@@ -297,7 +265,7 @@ parseFunction config =
         |> Parser.backtrackable
 
 
-parenthesizedExpression : Pratt.Config Expression -> Parser Expression
+parenthesizedExpression : Pratt.Config Opal.Ast.Canonical.Expression -> Parser Opal.Ast.Canonical.Expression
 parenthesizedExpression config =
     Parser.succeed identity
         |. Parser.symbol "("
@@ -305,7 +273,7 @@ parenthesizedExpression config =
         |. Parser.symbol ")"
 
 
-parseLambda : Pratt.Config Expression -> Parser Expression
+parseLambda : Pratt.Config Opal.Ast.Canonical.Expression -> Parser Opal.Ast.Canonical.Expression
 parseLambda config =
     Parser.succeed ExprAnonymousFunction
         |= Parser.sequence
@@ -320,12 +288,7 @@ parseLambda config =
         |= Pratt.subExpression 0 config
 
 
-type Literal
-    = LitInt Int
-    | LitString String
-
-
-parseLiteral : Parser Literal
+parseLiteral : Parser Opal.Ast.Canonical.Literal
 parseLiteral =
     Parser.oneOf
         [ Parser.map LitInt parseInt
@@ -369,10 +332,6 @@ parseStringHelper result =
             |> Parser.map (\charStr -> Loop (result ++ charStr))
         , Parser.succeed (Done result)
         ]
-
-
-
----- TYPE CHECKER ----
 
 
 typeCheck : Module -> Result String Module

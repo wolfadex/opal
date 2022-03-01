@@ -1,13 +1,13 @@
 module Opal.Js exposing (..)
 
 import Dict
-import Opal
+import Opal exposing (Module)
+import Opal.Ast.Canonical
     exposing
         ( BinaryOperator(..)
         , Definition
         , Expression(..)
         , Literal(..)
-        , Module
         , UnaryOperator(..)
         )
 
@@ -61,7 +61,7 @@ compileDefinition ( label, body ) =
             "var " ++ label ++ " = " ++ compileExpression body ++ ";"
 
 
-compileExpression : Opal.Expression -> String
+compileExpression : Expression -> String
 compileExpression expression =
     case expression of
         ExprLiteral (LitInt i) ->
