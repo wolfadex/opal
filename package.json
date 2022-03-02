@@ -2,7 +2,8 @@
   "name": "opal",
   "version": "0.1.0",
   "scripts": {
-    "dev": "elm-cli run src/Cli.elm"
+    "dev": "elm-cli run src/Cli.elm",
+    "compile-c": "clang -lSDL2 dist/*.c -o dist/opal-app"
   },
   "author": "Wolfgang Schuster",
   "devDependencies": {
