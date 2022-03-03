@@ -214,7 +214,7 @@ parseExpression =
             , Pratt.infixLeft 1 (Parser.symbol "-") (ExprBinary Difference)
             , Pratt.infixLeft 10 (Parser.symbol "*") (ExprBinary Product)
             , Pratt.infixLeft 10 (Parser.symbol "/") (ExprBinary Quotient)
-            , Pratt.infixLeft 20 (Parser.symbol ".") (ExprBinary PipedFunction)
+            , Pratt.infixLeft 20 (Parser.symbol "|>") (ExprBinary PipedFunction)
             ]
         , spaces = Parser.spaces
         }
