@@ -1,13 +1,12 @@
 module Opal exposing (..)
 
-import Opal.Ast.Canonical
+import Opal.Ast.Frontend
     exposing
         ( BinaryOperator(..)
         , Expression(..)
         , Literal(..)
         , UnaryOperator(..)
         )
-import Opal.Ast.Typed
 import Opal.InferTypes.IdSource exposing (IdSource)
 import Parser exposing ((|.), (|=), DeadEnd, Parser, Problem(..), Step(..), Trailing(..))
 import Pratt exposing (expression)
@@ -29,7 +28,7 @@ parse input =
 
 
 type alias Module =
-    { definitions : List Opal.Ast.Canonical.Definition
+    { definitions : List Opal.Ast.Frontend.Definition
     }
 
 
@@ -41,12 +40,12 @@ parseOpal =
         |. Parser.end
 
 
-parseDefinitions : Parser (List Opal.Ast.Canonical.Definition)
+parseDefinitions : Parser (List Opal.Ast.Frontend.Definition)
 parseDefinitions =
     Parser.loop [] parseDefinitionsHelper
 
 
-parseDefinitionsHelper : List Opal.Ast.Canonical.Definition -> Parser (Step (List Opal.Ast.Canonical.Definition) (List Opal.Ast.Canonical.Definition))
+parseDefinitionsHelper : List Opal.Ast.Frontend.Definition -> Parser (Step (List Opal.Ast.Frontend.Definition) (List Opal.Ast.Frontend.Definition))
 parseDefinitionsHelper reverseDefinitions =
     Parser.oneOf
         [ Parser.succeed (\definition -> Loop (definition :: reverseDefinitions))
@@ -55,7 +54,7 @@ parseDefinitionsHelper reverseDefinitions =
         ]
 
 
-parseDefinition : Parser Opal.Ast.Canonical.Definition
+parseDefinition : Parser Opal.Ast.Frontend.Definition
 parseDefinition =
     Parser.succeed (\label type_ body -> { label = label, type_ = type_, body = body })
         |. Parser.spaces
@@ -70,7 +69,7 @@ parseDefinition =
         |> Parser.backtrackable
 
 
-praseTypeDef : Parser (Maybe Opal.Ast.Canonical.Type)
+praseTypeDef : Parser (Maybe Opal.Ast.Frontend.Type)
 praseTypeDef =
     Parser.oneOf
         [ Parser.succeed (Debug.log "type def" >> Just)
@@ -83,7 +82,7 @@ praseTypeDef =
         ]
 
 
-parseType : Parser Opal.Ast.Canonical.Type
+parseType : Parser Opal.Ast.Frontend.Type
 parseType =
     Pratt.expression
         { oneOf =
@@ -96,29 +95,29 @@ parseType =
         }
 
 
-parseConcreteType : Parser Opal.Ast.Canonical.Type
+parseConcreteType : Parser Opal.Ast.Frontend.Type
 parseConcreteType =
     Parser.succeed ()
         |. Parser.chompIf (\char -> Char.isAlpha char && Char.isUpper char)
         |. Parser.chompWhile Char.isAlphaNum
         |> Parser.getChompedString
-        |> Parser.map Opal.Ast.Canonical.Concrete
+        |> Parser.map Opal.Ast.Frontend.Concrete
         |> Parser.backtrackable
 
 
-parseTypeVariable : Parser Opal.Ast.Canonical.Type
+parseTypeVariable : Parser Opal.Ast.Frontend.Type
 parseTypeVariable =
     Parser.succeed ()
         |. Parser.chompIf (\char -> Char.isAlpha char && Char.isLower char)
         |. Parser.chompWhile Char.isAlphaNum
         |> Parser.getChompedString
-        |> Parser.map Opal.Ast.Canonical.Variable
+        |> Parser.map Opal.Ast.Frontend.Variable
         |> Parser.backtrackable
 
 
-parseFunctionType : Pratt.Config Opal.Ast.Canonical.Type -> Parser Opal.Ast.Canonical.Type
+parseFunctionType : Pratt.Config Opal.Ast.Frontend.Type -> Parser Opal.Ast.Frontend.Type
 parseFunctionType config =
-    Parser.succeed Opal.Ast.Canonical.Function
+    Parser.succeed Opal.Ast.Frontend.Function
         |= Parser.sequence
             { start = "("
             , separator = ","
@@ -141,12 +140,12 @@ parseLabel =
         |> Parser.getChompedString
 
 
-simplify : Opal.Ast.Canonical.Expression -> Opal.Ast.Canonical.Expression
+simplify : Opal.Ast.Frontend.Expression -> Opal.Ast.Frontend.Expression
 simplify =
     Transform.transformAll recurseExpression simplifyAll
 
 
-recurseExpression : (Opal.Ast.Canonical.Expression -> Opal.Ast.Canonical.Expression) -> Opal.Ast.Canonical.Expression -> Opal.Ast.Canonical.Expression
+recurseExpression : (Opal.Ast.Frontend.Expression -> Opal.Ast.Frontend.Expression) -> Opal.Ast.Frontend.Expression -> Opal.Ast.Frontend.Expression
 recurseExpression fn expression =
     case expression of
         ExprBinary op leftExpr rightExpr ->
@@ -158,13 +157,13 @@ recurseExpression fn expression =
         ExprUnary unary expr ->
             ExprUnary unary (fn expr)
 
-        ExprFunctionApplication label argExprs ->
-            ExprFunctionApplication label (List.map fn argExprs)
+        ExprFunctionApplication func arg ->
+            ExprFunctionApplication (fn func) (fn arg)
 
-        ExprAnonymousFunction args expr ->
-            ExprAnonymousFunction args (fn expr)
+        ExprLambda args expr ->
+            ExprLambda args (fn expr)
 
-        ExprWord _ ->
+        ExprVariable _ ->
             expression
 
         ExprLetIn defs expr ->
@@ -177,36 +176,40 @@ recurseExpression fn expression =
         ExprIfElse conditionExpr thenExpr elseExpr ->
             ExprIfElse (fn conditionExpr) (fn thenExpr) (fn elseExpr)
 
+        ExprArgument _ ->
+            expression
 
-simplifyAll : Opal.Ast.Canonical.Expression -> Maybe Opal.Ast.Canonical.Expression
+
+simplifyAll : Opal.Ast.Frontend.Expression -> Maybe Opal.Ast.Frontend.Expression
 simplifyAll =
     Transform.orList_
         [ simplifyPipe
         ]
 
 
-simplifyPipe : Opal.Ast.Canonical.Expression -> Opal.Ast.Canonical.Expression
+simplifyPipe : Opal.Ast.Frontend.Expression -> Opal.Ast.Frontend.Expression
 simplifyPipe expression =
     case expression of
-        ExprBinary PipedFunction leftExpr (ExprFunctionApplication label argExprs) ->
-            ExprFunctionApplication label (leftExpr :: argExprs)
+        ExprBinary PipedFunction leftExpr rightExpr ->
+            ExprFunctionApplication rightExpr leftExpr
 
         _ ->
             expression
 
 
-parseExpression : Parser Opal.Ast.Canonical.Expression
+parseExpression : Parser Opal.Ast.Frontend.Expression
 parseExpression =
     Pratt.expression
         { oneOf =
-            [ Pratt.literal (Parser.map ExprLiteral parseLiteral)
-            , Pratt.prefix 5 (Parser.symbol "-") (ExprUnary Negate)
+            [ parseIfElse
             , parseLetIn
-            , parseIfElse
-            , parseFunction
-            , parenthesizedExpression
-            , Pratt.literal (Parser.map ExprWord parseLabel)
             , parseLambda
+            , Pratt.literal (Parser.map ExprLiteral parseLiteral)
+            , Pratt.literal (Parser.map ExprVariable parseLabel)
+            , Pratt.prefix 5 (Parser.symbol "-") (ExprUnary Negate)
+
+            -- , parseFunction
+            , parenthesizedExpression
             ]
         , andThenOneOf =
             [ Pratt.infixLeft 1 (Parser.symbol "++") (ExprBinary Concat)
@@ -215,12 +218,13 @@ parseExpression =
             , Pratt.infixLeft 10 (Parser.symbol "*") (ExprBinary Product)
             , Pratt.infixLeft 10 (Parser.symbol "/") (ExprBinary Quotient)
             , Pratt.infixLeft 20 (Parser.symbol "|>") (ExprBinary PipedFunction)
+            , Pratt.infixLeft 99 (Parser.succeed ()) Opal.Ast.Frontend.ExprFunctionApplication
             ]
         , spaces = Parser.spaces
         }
 
 
-parseLetIn : Pratt.Config Opal.Ast.Canonical.Expression -> Parser Opal.Ast.Canonical.Expression
+parseLetIn : Pratt.Config Opal.Ast.Frontend.Expression -> Parser Opal.Ast.Frontend.Expression
 parseLetIn config =
     Parser.succeed ExprLetIn
         |. Parser.keyword "let"
@@ -232,7 +236,7 @@ parseLetIn config =
         |= Pratt.subExpression 0 config
 
 
-parseIfElse : Pratt.Config Opal.Ast.Canonical.Expression -> Parser Opal.Ast.Canonical.Expression
+parseIfElse : Pratt.Config Opal.Ast.Frontend.Expression -> Parser Opal.Ast.Frontend.Expression
 parseIfElse config =
     Parser.succeed ExprIfElse
         |. Parser.keyword "if"
@@ -249,23 +253,24 @@ parseIfElse config =
         |. Parser.spaces
 
 
-parseFunction : Pratt.Config Opal.Ast.Canonical.Expression -> Parser Opal.Ast.Canonical.Expression
-parseFunction config =
-    Parser.succeed ExprFunctionApplication
-        |= parseLabel
-        |. Parser.spaces
-        |= Parser.sequence
-            { start = "("
-            , separator = ","
-            , spaces = Parser.spaces
-            , item = Pratt.subExpression 0 config
-            , end = ")"
-            , trailing = Forbidden
-            }
-        |> Parser.backtrackable
+
+-- parseFunction : Pratt.Config Opal.Ast.Frontend.Expression -> Parser Opal.Ast.Frontend.Expression
+-- parseFunction config =
+--     Parser.succeed ExprFunctionApplication
+--         |= parseLabel
+--         |. Parser.spaces
+--         |= Parser.sequence
+--             { start = "("
+--             , separator = ","
+--             , spaces = Parser.spaces
+--             , item = Pratt.subExpression 0 config
+--             , end = ")"
+--             , trailing = Forbidden
+--             }
+--         |> Parser.backtrackable
 
 
-parenthesizedExpression : Pratt.Config Opal.Ast.Canonical.Expression -> Parser Opal.Ast.Canonical.Expression
+parenthesizedExpression : Pratt.Config Opal.Ast.Frontend.Expression -> Parser Opal.Ast.Frontend.Expression
 parenthesizedExpression config =
     Parser.succeed identity
         |. Parser.symbol "("
@@ -273,9 +278,9 @@ parenthesizedExpression config =
         |. Parser.symbol ")"
 
 
-parseLambda : Pratt.Config Opal.Ast.Canonical.Expression -> Parser Opal.Ast.Canonical.Expression
+parseLambda : Pratt.Config Opal.Ast.Frontend.Expression -> Parser Opal.Ast.Frontend.Expression
 parseLambda config =
-    Parser.succeed ExprAnonymousFunction
+    Parser.succeed ExprLambda
         |= Parser.sequence
             { start = "\\"
             , separator = ","
@@ -288,11 +293,12 @@ parseLambda config =
         |= Pratt.subExpression 0 config
 
 
-parseLiteral : Parser Opal.Ast.Canonical.Literal
+parseLiteral : Parser Opal.Ast.Frontend.Literal
 parseLiteral =
     Parser.oneOf
         [ Parser.map LitInt parseInt
         , Parser.map LitString parseString
+        , Parser.map LitBool parseBool
         ]
 
 
@@ -319,6 +325,17 @@ parseString =
         |. Parser.symbol "\""
         |= Parser.loop "" parseStringHelper
         |. Parser.symbol "\""
+
+
+parseBool : Parser Bool
+parseBool =
+    Parser.oneOf
+        [ Parser.succeed True
+            |. Parser.keyword "True"
+        , Parser.succeed False
+            |. Parser.keyword "False"
+        ]
+        |> Parser.backtrackable
 
 
 parseStringHelper : String -> Parser (Step String String)

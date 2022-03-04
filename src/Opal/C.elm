@@ -2,7 +2,7 @@ module Opal.C exposing (compile)
 
 import Dict
 import Opal exposing (Module)
-import Opal.Ast.Canonical
+import Opal.Ast.Frontend
     exposing
         ( BinaryOperator(..)
         , Definition
@@ -10,6 +10,7 @@ import Opal.Ast.Canonical
         , Literal(..)
         , UnaryOperator(..)
         )
+import Pratt exposing (literal)
 
 
 compile : Module -> Result String String
@@ -28,6 +29,31 @@ compile module_ =
 #else
 #include "SDL2/SDL.h"
 #endif
+
+typedef struct
+{
+    int arity;
+    void (*func);
+    void (*wrapper);
+} FWrapper;
+
+void f2(void (*func))
+{
+    return (FWrapper){
+        .arity = 2,
+        .func = func
+        .wrapper = 
+    };
+}
+
+function F2(fun) {
+  return F(2, fun, function(a) { return function(b) { return fun(a,b); }; })
+}
+function F3(fun) {
+  return F(3, fun, function(a) {
+    return function(b) { return function(c) { return fun(a, b, c); }; };
+  });
+}
 
 """
                 ++ String.join "\n" (List.map compileDefinition otherDefs)
@@ -116,11 +142,43 @@ simplifyDefinition definition =
 compileDefinition : ( String, Expression ) -> String
 compileDefinition ( label, body ) =
     case body of
-        ExprAnonymousFunction args expr ->
-            "void " ++ label ++ "(" ++ String.join ", " args ++ ") { return " ++ compileExpression expr ++ "; }"
+        ExprLambda args expr ->
+            "void "
+                -- TODO: use C type instead of void
+                ++ label
+                ++ "("
+                ++ String.join ", " args
+                ++ ")\n{\n\treturn "
+                ++ compileExpression expr
+                ++ ";\n}"
+
+        ExprLiteral literal ->
+            case literal of
+                LitBool bool ->
+                    "const bool "
+                        ++ label
+                        ++ " = "
+                        ++ (if bool then
+                                "true"
+
+                            else
+                                "false"
+                           )
+                        ++ ";"
+
+                LitInt i ->
+                    "const int " ++ label ++ " = " ++ String.fromInt i ++ ";"
+
+                LitString str ->
+                    "const *char[] " ++ label ++ " = " ++ str ++ ";"
 
         _ ->
-            "var " ++ label ++ " = " ++ compileExpression body ++ ";"
+            "void "
+                -- TODO: use C type instead of void
+                ++ label
+                ++ "()\n{\n\treturn "
+                ++ compileExpression body
+                ++ "; }"
 
 
 compileExpression : Expression -> String
@@ -130,7 +188,14 @@ compileExpression expression =
             String.fromInt i
 
         ExprLiteral (LitString str) ->
-            "'" ++ str ++ "'"
+            "\"" ++ str ++ "\""
+
+        ExprLiteral (LitBool bool) ->
+            if bool then
+                "true"
+
+            else
+                "false"
 
         ExprBinary Sum leftExpr rightExpr ->
             compileExpression leftExpr ++ " + " ++ compileExpression rightExpr
@@ -153,14 +218,17 @@ compileExpression expression =
         ExprUnary Negate expr ->
             "-" ++ compileExpression expr
 
-        ExprFunctionApplication label expressions ->
-            label ++ "(" ++ String.join ", " (List.map compileExpression expressions) ++ ")"
+        ExprFunctionApplication func arg ->
+            compileExpression func ++ "(" ++ compileExpression arg ++ ")"
 
-        ExprAnonymousFunction args expr ->
+        ExprLambda args expr ->
             "function(" ++ String.join ", " args ++ ") { return " ++ compileExpression expr ++ "; }"
 
-        ExprWord label ->
+        ExprVariable label ->
             label
+
+        ExprArgument arg ->
+            arg
 
         ExprLetIn defs expr ->
             "(function() {"
